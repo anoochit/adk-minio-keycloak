@@ -61,7 +61,7 @@ flowchart TB
 ## 3. Core Components & Responsibilities
 
 | Component | Technology | Role & Key Responsibilities |
-|---|---|---|
+| --- | --- | --- |
 | **Identity Provider** | Keycloak 26.0 | Centralized OIDC identity provider. Manages realms, users (e.g. `alice`), credentials, and issues cryptographically signed JWT tokens with claims (`preferred_username`, `aud`, `iss`). Exposes JWKS endpoints for token verification. |
 | **Edge Perimeter Proxy** | OAuth2 Proxy 7.7.1 | Sits at edge port `4180`. Intercepts all browser traffic, initiates OIDC authentication with Keycloak, manages HTTP-only encrypted session cookies, and injects validated `X-Forwarded-Access-Token` and `X-Forwarded-Preferred-Username` into upstream requests. |
 | **Frontend & Web Gateway** | React 18 + Vite + Nginx | Single Page Application providing chat interface and suggestion chips. Served by Nginx, which also acts as a streaming-friendly reverse proxy forwarding `/apps`, `/run`, and `/run_sse` to `adk-server:8000`. |
@@ -73,6 +73,7 @@ flowchart TB
 ## 4. Security & Isolation Architecture
 
 ### 4.1. The Confused Deputy Problem in AI Agents
+
 In traditional architectures, backends use superuser S3 credentials (`minioadmin`), trusting prompt instructions (e.g., *"only access files for user X"*) or application code filters. If an attacker performs prompt injection or path tampering (e.g. `../../bob/passwords.txt`), a privileged backend will execute it.
 
 ### 4.2. Defense-in-Depth: The Three Enforcement Boundaries
@@ -117,6 +118,7 @@ flowchart LR
    - Every file tool calls `sts.assume_role_with_web_identity` with the user's Keycloak JWT.
    - MinIO contacts Keycloak's `.well-known/openid-configuration` and JWKS to cryptographically verify the signature.
    - MinIO returns temporary credentials (15-minute expiration) governed by `user-folder-policy.json`:
+
      ```json
      {
        "Version": "2012-10-17",
@@ -144,6 +146,7 @@ flowchart LR
        ]
      }
      ```
+
    - Even if the application logic or LLM is completely compromised, MinIO itself will reject any attempt to access another user's prefix with `403 AccessDenied`.
 
 ---
@@ -151,13 +154,16 @@ flowchart LR
 ## 5. Dual-Client Pattern for S3 Presigned URLs
 
 A key networking challenge in containerized architectures is dual DNS visibility:
+
 - **Internal Network:** `adk-server` communicates with MinIO at `http://minio:9000`.
 - **External Network:** The user's browser communicates with MinIO at `http://localhost:9000`.
 
 If presigned URLs were minted using the internal endpoint, browser requests would fail with hostname lookup errors. If the backend initialized its client with `localhost:9000`, backend calls from inside the container would fail.
 
 ### Solution: Dual Client Instantiation
+
 In `adk-server/my_agent/agent.py`:
+
 - `internal_client = Minio(MINIO_ENDPOINT, ...)` (e.g. `minio:9000`): Used for backend-directed operations (`list_objects`, `put_object`, `get_object`, `remove_object`).
 - `public_client = Minio(MINIO_PUBLIC_ENDPOINT, ...)` (e.g. `localhost:9000`): Used exclusively to sign upload (`presigned_put_object`) and download (`presigned_get_object`) URLs for direct browser interaction.
 
@@ -169,12 +175,12 @@ In `adk-server/my_agent/agent.py`:
 sequenceDiagram
     autonumber
     actor User as Browser (React UI)
-    participant Proxy as OAuth2 Proxy (:4180)
-    participant KC as Keycloak (:8080)
-    participant Nginx as Nginx (:80)
-    participant ADK as FastAPI (Auth Middleware)
-    participant Agent as Google ADK Agent (Gemini)
-    participant MinIO as MinIO STS & Storage (:9000)
+    participant Proxy as "OAuth2 Proxy (:4180)"
+    participant KC as "Keycloak (:8080)"
+    participant Nginx as "Nginx (:80)"
+    participant ADK as "FastAPI (Auth Middleware)"
+    participant Agent as "Google ADK Agent (Gemini)"
+    participant MinIO as "MinIO STS & Storage (:9000)"
 
     User->>Proxy: GET / (Initial Visit)
     Proxy->>User: 302 Redirect to Keycloak Login
@@ -183,7 +189,7 @@ sequenceDiagram
     Proxy-->>User: Set-Cookie: _oauth2_proxy (Encrypted Session)
 
     User->>Proxy: POST /run_sse (User prompt: "List my files")
-    Note over Proxy: Validates cookie; injects X-Forwarded-Access-Token & Preferred-Username
+    Note over Proxy: Validates cookie&#59; injects X-Forwarded-Access-Token & Preferred-Username
     Proxy->>Nginx: Forward request with auth headers
     Nginx->>ADK: Proxy pass to http://adk-server:8000/run_sse
 
