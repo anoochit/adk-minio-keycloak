@@ -58,6 +58,7 @@ flowchart TB
 | `list_my_files` | Lists objects under the caller's `{username}/` prefix |
 | `upload_text_file` | Creates/overwrites a UTF-8 text file in the user's folder |
 | `read_text_file` | Reads a text file from the user's folder |
+| `delete_file` | Deletes a file from the user's folder |
 | `get_download_link` | 10-minute presigned GET URL |
 | `get_upload_link` | 10-minute presigned PUT URL (browser uploads direct to MinIO) |
 

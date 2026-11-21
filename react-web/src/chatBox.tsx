@@ -9,10 +9,11 @@ interface Message {
 }
 
 const SUGGESTIONS = [
-  "📁 ดูรายชื่อไฟล์ของฉัน",
-  "✍️ สร้างไฟล์ hello.txt เนื้อหา สวัสดีจาก ADK",
-  "📖 อ่านไฟล์ hello.txt",
-  "🔗 ขอลิงก์ดาวน์โหลด hello.txt",
+  "📁 List my files",
+  "✍️ Create hello.txt with content Hello from ADK",
+  "📖 Read hello.txt",
+  "🗑️ Delete hello.txt",
+  "🔗 Get download link for hello.txt",
 ];
 
 export function ChatBox({
@@ -79,8 +80,8 @@ export function ChatBox({
             e.message.includes("401") ||
             e.message.includes("Token has expired");
           const errorMsg = isExpired
-            ? "โทเค็นการยืนยันตัวตนหมดอายุแล้ว กรุณารีเฟรชหน้าเว็บ (F5) เพื่อเข้าสู่ระบบใหม่ผ่าน Keycloak"
-            : `เกิดข้อผิดพลาด: ${e.message}`;
+            ? "Session token has expired. Please refresh the page (F5) to log in again via Keycloak."
+            : `An error occurred: ${e.message}`;
 
           setMessages((prev) =>
             prev.map((msg) =>
@@ -108,16 +109,16 @@ export function ChatBox({
         {messages.length === 0 ? (
           <div className="empty-chat">
             <div className="empty-chat-icon">💬</div>
-            <div className="empty-chat-title">ยินดีต้อนรับสู่ ADK File Assistant</div>
+            <div className="empty-chat-title">Welcome to ADK File Assistant</div>
             <div className="empty-chat-sub">
-              เริ่มพิมพ์ข้อความหรือเลือกคำสั่งแนะนำด้านล่าง เพื่อจัดการไฟล์ส่วนตัวของคุณบน MinIO
+              Type a message or select a suggestion below to manage your personal files on MinIO.
             </div>
           </div>
         ) : (
           messages.map((msg) => (
             <div key={msg.id} className={`message-row ${msg.role}`}>
               <div className={`avatar ${msg.role}`}>
-                {msg.role === "user" ? "คุณ" : "AI"}
+                {msg.role === "user" ? "You" : "AI"}
               </div>
               <div className="message-content">
                 {msg.text || (loading && msg.role === "assistant" ? (
@@ -154,7 +155,7 @@ export function ChatBox({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="สั่งงาน Agent เช่น ดูรายชื่อไฟล์ของฉัน... (Press Enter to send)"
+            placeholder="Ask the agent, e.g. List my files... (Press Enter to send)"
             rows={1}
           />
           <button
@@ -162,7 +163,7 @@ export function ChatBox({
             onClick={() => handleSend()}
             disabled={loading || !input.trim()}
           >
-            {loading ? "กำลังตอบ..." : "ส่ง"}
+            {loading ? "Replying..." : "Send"}
           </button>
         </div>
       </div>

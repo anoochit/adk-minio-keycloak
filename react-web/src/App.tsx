@@ -26,7 +26,7 @@ export function App() {
         <div className="header-top">
           <div className="header-title-group">
             <div className="header-icon">📂</div>
-            <h1 className="app-title">ผู้ช่วยจัดการไฟล์ส่วนตัว (MinIO + ADK)</h1>
+            <h1 className="app-title">Personal File Assistant (MinIO + ADK)</h1>
           </div>
           <div className="badges-group">
             <span className="status-badge active">
@@ -39,7 +39,7 @@ export function App() {
           </div>
         </div>
         <p className="header-description">
-          ยืนยันตัวตนผ่าน OAuth2 Proxy &amp; Keycloak แล้ว — ระบบจำกัดสิทธิ์เฉพาะพื้นที่จัดเก็บไฟล์ส่วนตัวของคุณโดยอัตโนมัติ
+          Authenticated via OAuth2 Proxy &amp; Keycloak — access is automatically restricted to your personal storage directory.
         </p>
       </header>
 

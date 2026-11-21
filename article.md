@@ -18,6 +18,7 @@ def list_files(user_id: str):
 In an agentic system, this pattern is dangerous. Large Language Models are probabilistic reasoning engines, susceptible to **prompt injection**, **jailbreaking**, and **hallucination**. If an attacker tricks the model into executing `read_file(path="../bob/financials.pdf")` or `list_files(user_id="admin")`, a backend armed with superuser S3 credentials will happily execute the command. The agent becomes a **Confused Deputy** — a privileged entity coerced into misusing its authority.
 
 To build a genuinely multi-tenant, secure AI file assistant, we must enforce **Zero Trust**:
+
 1. The AI agent and the application backend must **never possess master storage credentials**.
 2. File isolation must be enforced cryptographically at the **storage infrastructure layer**, completely independent of application code or LLM prompts.
 3. Credentials passed to the agent tools must be **short-lived**, dynamically minted, and strictly bound to the authenticated user's identity.
@@ -69,7 +70,7 @@ flowchart TB
 ### Component Roles
 
 | Service | Technology | Responsibility |
-|---|---|---|
+| --- | --- | --- |
 | **Identity Provider** | Keycloak 26.0 | Issues OpenID Connect (OIDC) JWTs containing user identities (`preferred_username`). |
 | **Edge Reverse Proxy** | OAuth2 Proxy 7.7 | Protects the perimeter. Manages encrypted session cookies, validates login state with Keycloak, and injects JWTs downstream via HTTP headers. |
 | **Frontend Web** | React 18 + Vite + Nginx | Serves the user interface and proxies API calls (`/apps`, `/run`, `/run_sse`) through Nginx with streaming optimizations. |
@@ -100,18 +101,23 @@ flowchart LR
 ```
 
 ### Boundary 1: OAuth2 Proxy Perimeter
+
 The frontend never holds or manages raw authentication tokens. When the user logs in, OAuth2 Proxy stores the access token inside an encrypted, HTTP-only session cookie (`_oauth2_proxy`). Every incoming request to upstream services is stripped of client-supplied authentication headers and injected with verified server-side headers:
+
 * `X-Forwarded-Access-Token`: The raw Keycloak OIDC JWT.
 * `X-Forwarded-Preferred-Username`: The user's verified identity (e.g., `alice`).
 
 ### Boundary 2: ASGI Identity Pinning & Path Normalization
+
 Even if an attacker bypasses the frontend or crafts custom HTTP requests, the ADK FastAPI server runs a custom ASGI middleware (`AuthInjectMiddleware`). This middleware:
+
 1. Validates the presence of `X-Forwarded-Access-Token` and optionally verifies the signature against Keycloak's JWKS endpoint.
 2. Extracts the verified username and **rewrites** the request path (`/apps/{app}/users/{user}/...`) and the JSON request body (`user_id = username`).
 3. Injects the JWT and username into the agent's `state_delta` dictionary, making it accessible to the agent's tool execution context.
 4. Enforces application-level path normalization in `_safe_user_path()`, preventing directory traversal attacks like `../../` before any S3 call is made.
 
 ### Boundary 3: The Cryptographic Storage Boundary (The Core)
+
 This is the heart of the system. In `adk-server/my_agent/agent.py`, whenever the agent executes a file tool, it makes an STS call:
 
 ```python
@@ -235,11 +241,14 @@ Requests routed through OAuth2 Proxy (`http://localhost:4180`) were rejected by 
 
 **Root Cause:**
 Google ADK includes an internal security check comparing the incoming `Origin` header against the `Host` header. Two separate issues caused this to fail:
+
 1. ADK's `allow_origins` parameter was not configured with the proxy's URL.
 2. In Nginx, using `proxy_set_header Host $host;` stripped the port number. The incoming Origin was `http://localhost:4180`, but ADK received a Host header of `localhost` without `:4180`.
 
 **Solution:**
+
 1. Pass allowed origins into `get_fast_api_app`:
+
    ```python
    app = get_fast_api_app(
        agents_dir=".",
@@ -247,7 +256,9 @@ Google ADK includes an internal security check comparing the incoming `Origin` h
        web=False,
    )
    ```
+
 2. In `nginx.conf`, switch from `$host` to `$http_host` (which preserves the port):
+
    ```nginx
    proxy_set_header Host $http_host;
    ```
@@ -363,12 +374,15 @@ Error processing RoleArn parameter: RoleARN parse err: invalid ARN - bad partiti
 Standard AWS IAM role ARNs use the partition `arn:aws:iam:::role/...`. MinIO parses ARNs using its own internal rules and requires the partition `minio`: `arn:minio:iam:::role/...`. Furthermore, MinIO does not support arbitrary role names; it hashes the policy name specified in `MINIO_IDENTITY_OPENID_ROLE_POLICY` on boot.
 
 **Solution:**
+
 1. Configure MinIO with `MINIO_IDENTITY_OPENID_ROLE_POLICY="user-folder-policy"`.
 2. Inspect the MinIO container startup logs to extract the generated role ARN:
+
    ```bash
    docker compose logs minio | grep "IAM Roles"
    # Output: INFO: IAM Roles: arn:minio:iam:::role/ivd6H_TwNAxH9YkB81tz8yJe_Jk
    ```
+
 3. Set `MINIO_ROLE_ARN` in `adk-server` to this exact ARN. The hash is deterministic across container restarts as long as the policy name remains unchanged.
 
 ---
@@ -405,6 +419,7 @@ In the chat interface, every assistant response rendered twice (e.g., `Hello! He
 
 **Root Cause:**
 The Google ADK `/run_sse` endpoint follows a dual-phase event protocol:
+
 1. Streaming tokens are emitted as events where `partial: true` containing text chunks (deltas).
 2. Upon completion of the turn, ADK emits a final event where `partial: false` containing the **entire aggregated response text**.
 
@@ -438,7 +453,7 @@ if (payload?.partial === true) {
 To ensure that the isolation model works under adversarial conditions, the system was validated through automated checks and security tests:
 
 | Test Scenario | Method | Expected Result | Actual Result |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Legitimate File Creation** | Agent prompt: *"Create notes.txt"* | File created under `user-files/alice/notes.txt` | ✅ Created (200 OK) |
 | **Direct Object Verification** | Direct MinIO listing with admin credentials | Inspect physical S3 storage layout | ✅ Verified at `alice/notes.txt` |
 | **Cross-Tenant Read Attack** | Python script assuming `alice` STS credentials to read `bob/secret.txt` | MinIO rejects operation | ✅ `403 AccessDenied` |
@@ -453,6 +468,7 @@ To ensure that the isolation model works under adversarial conditions, the syste
 ## 7. How to Run the Stack Locally
 
 ### Prerequisites
+
 * Docker and Docker Compose
 * A Google Gemini API Key (`AIza...`)
 
@@ -479,6 +495,7 @@ docker compose up --build -d
 ```
 
 The initialization sequence will automatically:
+
 1. Start Keycloak and import `keycloak/my-realm.json` (preconfigured with test user `alice` / `password123`).
 2. Start MinIO and run `minio-init` to provision the `user-files` bucket and apply `user-folder-policy.json`.
 3. Launch `adk-server`, `react-web`, and `oauth2-proxy`.

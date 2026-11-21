@@ -26,7 +26,7 @@ def _get_user_minio_client(tool_context: ToolContext) -> tuple[Minio, Minio, str
     username = tool_context.state.get("username")
 
     if not jwt_token or not username:
-        raise ValueError("ไม่พบ Token หรือข้อมูลผู้ใช้ กรุณาล็อกอินผ่าน Keycloak ใหม่")
+        raise ValueError("Token or user information not found. Please log in via Keycloak again.")
 
     scheme = "https" if MINIO_USE_SSL else "http"
     sts = boto3.client(
@@ -64,7 +64,7 @@ def _get_user_minio_client(tool_context: ToolContext) -> tuple[Minio, Minio, str
 
 
 def _safe_user_path(username: str, filename: str) -> str:
-    """บังคับให้อยู่ใต้โฟลเดอร์ {username}/ เท่านั้น และกัน path traversal"""
+    """Force path to stay under {username}/ only and prevent path traversal."""
     safe_user = posixpath.basename(username.strip())
     if not safe_user or safe_user in (".", ".."):
         raise ValueError("Invalid username")
@@ -95,9 +95,9 @@ def list_my_files(tool_context: ToolContext) -> str:
             for obj in objects
             if obj.object_name.removeprefix(prefix)
         ]
-        return "\n".join(files) if files else "โฟลเดอร์ของคุณยังไม่มีไฟล์"
+        return "\n".join(files) if files else "Your folder does not contain any files."
     except Exception as e:
-        return f"เกิดข้อผิดพลาดในการดึงรายชื่อไฟล์: {str(e)}"
+        return f"Error listing files: {str(e)}"
 
 
 def upload_text_file(filename: str, content: str, tool_context: ToolContext) -> str:
@@ -112,9 +112,9 @@ def upload_text_file(filename: str, content: str, tool_context: ToolContext) -> 
             length=len(data),
             content_type="text/plain; charset=utf-8",
         )
-        return f"บันทึกไฟล์ '{filename}' เรียบร้อยแล้ว"
+        return f"File '{filename}' saved successfully."
     except Exception as e:
-        return f"อัปโหลดไฟล์ไม่สำเร็จ: {str(e)}"
+        return f"Failed to upload file '{filename}': {str(e)}"
 
 
 def read_text_file(filename: str, tool_context: ToolContext) -> str:
@@ -128,7 +128,23 @@ def read_text_file(filename: str, tool_context: ToolContext) -> str:
             response.close()
             response.release_conn()
     except Exception as e:
-        return f"ไม่สามารถอ่านไฟล์ '{filename}' ได้: {str(e)}"
+        return f"Could not read file '{filename}': {str(e)}"
+
+
+def delete_file(filename: str, tool_context: ToolContext) -> str:
+    try:
+        client, _, username = _get_user_minio_client(tool_context)
+        object_name = _safe_user_path(username, filename)
+        try:
+            client.stat_object(MINIO_BUCKET, object_name)
+        except Exception as stat_err:
+            if "NoSuchKey" in str(stat_err):
+                return f"File '{filename}' not found in your folder."
+            raise stat_err
+        client.remove_object(MINIO_BUCKET, object_name)
+        return f"File '{filename}' deleted successfully."
+    except Exception as e:
+        return f"Failed to delete file '{filename}': {str(e)}"
 
 
 def get_download_link(filename: str, tool_context: ToolContext) -> str:
@@ -140,9 +156,9 @@ def get_download_link(filename: str, tool_context: ToolContext) -> str:
             object_name=object_name,
             expires=timedelta(minutes=10),
         )
-        return f"ลิงก์ดาวน์โหลดสำหรับ '{filename}' (ใช้ได้ 10 นาที): {url}"
+        return f"Download link for '{filename}' (valid for 10 minutes): {url}"
     except Exception as e:
-        return f"สร้างลิงก์ดาวน์โหลดไม่สำเร็จ: {str(e)}"
+        return f"Failed to generate download link: {str(e)}"
 
 
 def get_upload_link(filename: str, tool_context: ToolContext) -> str:
@@ -154,24 +170,26 @@ def get_upload_link(filename: str, tool_context: ToolContext) -> str:
             object_name=object_name,
             expires=timedelta(minutes=10),
         )
-        return f"Presigned Upload URL สำหรับ '{filename}': {url}"
+        return f"Presigned upload URL for '{filename}': {url}"
     except Exception as e:
-        return f"สร้างลิงก์อัปโหลดไม่สำเร็จ: {str(e)}"
+        return f"Failed to generate upload link: {str(e)}"
 
 
 root_agent = Agent(
     name="minio_assistant",
-    model="gemini-2.5-flash",
-    description="ผู้ช่วยจัดการไฟล์ส่วนตัวของผู้ใช้บน MinIO",
+    model="gemini-3.5-flash",
+    description="Personal file management assistant on MinIO",
     instruction=(
-        "คุณคือผู้ช่วยจัดการไฟล์ส่วนตัวของผู้ใช้บนระบบจัดเก็บข้อมูล "
-        "ใช้เครื่องมือที่มีเพื่อดูรายชื่อไฟล์ อ่านไฟล์ สร้างไฟล์ หรือสร้างลิงก์ดาวน์โหลด/อัปโหลด "
-        "ห้ามพยายามเข้าถึงไฟล์นอกโฟลเดอร์ของผู้ใช้"
+        "You are a personal file management assistant on object storage. "
+        "Use the available tools to list files, read files, upload files, delete files, or generate download/upload links. "
+        "Never attempt to access files outside of the user's folder. "
+        "Always output your responses in plain text only. Do not use any markdown formatting or markdown styling (such as asterisks for bold or italics, markdown headings, bullet list markers, code blocks, backticks, or markdown links)."
     ),
     tools=[
         list_my_files,
         upload_text_file,
         read_text_file,
+        delete_file,
         get_download_link,
         get_upload_link,
     ],
