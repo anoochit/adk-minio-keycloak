@@ -1,0 +1,7 @@
+google-adk
+boto3
+minio
+PyJWT
+cryptography
+fastapi
+uvicorn[standard]

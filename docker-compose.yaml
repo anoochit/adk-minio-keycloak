@@ -1,0 +1,99 @@
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin_password
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./keycloak/my-realm.json:/opt/keycloak/data/import/my-realm.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin_password
+      MINIO_IDENTITY_OPENID_CONFIG_URL: "http://keycloak:8080/realms/my-realm/.well-known/openid-configuration"
+      MINIO_IDENTITY_OPENID_CLIENT_ID: "adk-minio-client"
+      MINIO_IDENTITY_OPENID_ROLE_POLICY: "user-folder-policy"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 minioadmin minioadmin_password; do sleep 2; done;
+      mc mb --ignore-existing local/user-files;
+      mc admin policy create local user-folder-policy /policies/user-folder-policy.json || true;
+      exit 0;
+      "
+    volumes:
+      - ./user-folder-policy.json:/policies/user-folder-policy.json:ro
+
+  react-web:
+    build:
+      context: ./react-web
+      dockerfile: Dockerfile
+    depends_on:
+      - adk-server
+    expose:
+      - "80"
+
+  adk-server:
+    build:
+      context: ./adk-server
+      dockerfile: Dockerfile
+    working_dir: /app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    depends_on:
+      - minio-init
+    env_file:
+      - .env
+    environment:
+      GOOGLE_GENAI_API_KEY: "${GOOGLE_GENAI_API_KEY}"
+      MINIO_ENDPOINT: "minio:9000"
+      MINIO_USE_SSL: "false"
+      MINIO_BUCKET: "user-files"
+      MINIO_ROLE_ARN: "arn:aws:iam:::role/user-storage-role"
+      REQUIRE_JWT_SIGNATURE: "false"
+      KEYCLOAK_JWKS_URL: "http://keycloak:8080/realms/my-realm/protocol/openid-connect/certs"
+      KEYCLOAK_AUDIENCE: "account"
+      KEYCLOAK_ISSUER: "http://localhost:8080/realms/my-realm"
+    expose:
+      - "8000"
+
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.7.1
+    command:
+      - "--config=/etc/oauth2-proxy/oauth2-proxy.cfg"
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      react-web:
+        condition: service_started
+      adk-server:
+        condition: service_started
+    ports:
+      - "4180:4180"
+    volumes:
+      - ./oauth2-proxy.cfg:/etc/oauth2-proxy/oauth2-proxy.cfg:ro
+
+volumes:
+  minio_data:
