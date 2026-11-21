@@ -8,6 +8,9 @@
     "resetPasswordAllowed": false,
     "editUsernameAllowed": false,
     "bruteForceProtected": true,
+    "accessTokenLifespan": 3600,
+    "ssoSessionIdleTimeout": 28800,
+    "ssoSessionMaxLifespan": 28800,
     "clients": [
         {
             "clientId": "adk-minio-client",
@@ -16,7 +19,7 @@
             "protocol": "openid-connect",
             "publicClient": false,
             "clientAuthenticatorType": "client-secret",
-            "secret": "change-me-in-dev-client-secret",
+            "secret": "uLbimkikuoCbVnSpg0Yzl3MfPJwgnjjD",
             "standardFlowEnabled": true,
             "implicitFlowEnabled": false,
             "directAccessGrantsEnabled": true,

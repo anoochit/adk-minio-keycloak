@@ -69,6 +69,7 @@ services:
     environment:
       GOOGLE_GENAI_API_KEY: "${GOOGLE_GENAI_API_KEY}"
       MINIO_ENDPOINT: "minio:9000"
+      MINIO_PUBLIC_ENDPOINT: "localhost:9000"
       MINIO_USE_SSL: "false"
       MINIO_BUCKET: "user-files"
       # MinIO derives this role from MINIO_IDENTITY_OPENID_ROLE_POLICY and

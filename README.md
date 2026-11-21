@@ -129,7 +129,7 @@ If you create your own realm/client instead, make sure:
   GOOGLE_GENAI_API_KEY=AIza...
   ```
 
-* Set `client_secret` (from Keycloak) and a 32-byte URL-safe base64 `cookie_secret` in `oauth2-proxy.cfg`. Generate the cookie secret with:
+* Set `client_secret` (from Keycloak) and a 32-byte URL-safe base64 `cookie_secret` in `oauth2-proxy.cfg`. `cookie_refresh = "2m"` is enabled to automatically refresh OIDC access tokens. Generate the cookie secret with:
 
   ```bash
   python3 -c 'import os,base64; print(base64.urlsafe_b64encode(os.urandom(32)).decode())'

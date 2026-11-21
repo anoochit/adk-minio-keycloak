@@ -9,8 +9,10 @@ from google.adk.agents import Agent
 from google.adk.tools import ToolContext
 
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "localhost:9000")
+MINIO_PUBLIC_ENDPOINT = os.getenv("MINIO_PUBLIC_ENDPOINT", "localhost:9000")
 MINIO_USE_SSL = os.getenv("MINIO_USE_SSL", "false").lower() == "true"
 MINIO_BUCKET = os.getenv("MINIO_BUCKET", "user-files")
+
 # MinIO's role partition is "minio" (not "aws") and the role must be the one
 # MinIO generates from MINIO_IDENTITY_OPENID_ROLE_POLICY — check the startup
 # line "IAM Roles: ..." in `docker compose logs minio` if STS rejects it.
@@ -19,7 +21,7 @@ MINIO_ROLE_ARN = os.getenv(
 )
 
 
-def _get_user_minio_client(tool_context: ToolContext) -> tuple[Minio, str]:
+def _get_user_minio_client(tool_context: ToolContext) -> tuple[Minio, Minio, str]:
     jwt_token = tool_context.state.get("keycloak_token")
     username = tool_context.state.get("username")
 
@@ -41,14 +43,24 @@ def _get_user_minio_client(tool_context: ToolContext) -> tuple[Minio, str]:
     )
     creds = response["Credentials"]
 
-    client = Minio(
+    internal_client = Minio(
         MINIO_ENDPOINT,
         access_key=creds["AccessKeyId"],
         secret_key=creds["SecretAccessKey"],
         session_token=creds["SessionToken"],
         secure=MINIO_USE_SSL,
     )
-    return client, username
+
+    public_client = Minio(
+        MINIO_PUBLIC_ENDPOINT,
+        access_key=creds["AccessKeyId"],
+        secret_key=creds["SecretAccessKey"],
+        session_token=creds["SessionToken"],
+        region="us-east-1",
+        secure=MINIO_USE_SSL,
+    )
+
+    return internal_client, public_client, username
 
 
 def _safe_user_path(username: str, filename: str) -> str:
@@ -75,7 +87,7 @@ def _safe_user_path(username: str, filename: str) -> str:
 
 def list_my_files(tool_context: ToolContext) -> str:
     try:
-        client, username = _get_user_minio_client(tool_context)
+        client, _, username = _get_user_minio_client(tool_context)
         prefix = f"{username}/"
         objects = client.list_objects(MINIO_BUCKET, prefix=prefix, recursive=True)
         files = [
@@ -90,7 +102,7 @@ def list_my_files(tool_context: ToolContext) -> str:
 
 def upload_text_file(filename: str, content: str, tool_context: ToolContext) -> str:
     try:
-        client, username = _get_user_minio_client(tool_context)
+        client, _, username = _get_user_minio_client(tool_context)
         object_name = _safe_user_path(username, filename)
         data = content.encode("utf-8")
         client.put_object(
@@ -107,7 +119,7 @@ def upload_text_file(filename: str, content: str, tool_context: ToolContext) -> 
 
 def read_text_file(filename: str, tool_context: ToolContext) -> str:
     try:
-        client, username = _get_user_minio_client(tool_context)
+        client, _, username = _get_user_minio_client(tool_context)
         object_name = _safe_user_path(username, filename)
         response = client.get_object(MINIO_BUCKET, object_name)
         try:
@@ -121,9 +133,9 @@ def read_text_file(filename: str, tool_context: ToolContext) -> str:
 
 def get_download_link(filename: str, tool_context: ToolContext) -> str:
     try:
-        client, username = _get_user_minio_client(tool_context)
+        _, public_client, username = _get_user_minio_client(tool_context)
         object_name = _safe_user_path(username, filename)
-        url = client.presigned_get_object(
+        url = public_client.presigned_get_object(
             bucket_name=MINIO_BUCKET,
             object_name=object_name,
             expires=timedelta(minutes=10),
@@ -135,9 +147,9 @@ def get_download_link(filename: str, tool_context: ToolContext) -> str:
 
 def get_upload_link(filename: str, tool_context: ToolContext) -> str:
     try:
-        client, username = _get_user_minio_client(tool_context)
+        _, public_client, username = _get_user_minio_client(tool_context)
         object_name = _safe_user_path(username, filename)
-        url = client.presigned_put_object(
+        url = public_client.presigned_put_object(
             bucket_name=MINIO_BUCKET,
             object_name=object_name,
             expires=timedelta(minutes=10),
