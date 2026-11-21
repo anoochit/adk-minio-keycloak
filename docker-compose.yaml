@@ -71,7 +71,11 @@ services:
       MINIO_ENDPOINT: "minio:9000"
       MINIO_USE_SSL: "false"
       MINIO_BUCKET: "user-files"
-      MINIO_ROLE_ARN: "arn:aws:iam:::role/user-storage-role"
+      # MinIO derives this role from MINIO_IDENTITY_OPENID_ROLE_POLICY and
+      # requires partition "minio" (not "aws") — confirm with:
+      #   docker compose logs minio | grep "IAM Roles"
+      # Any other ARN makes every AssumeRoleWithWebIdentity call fail.
+      MINIO_ROLE_ARN: "arn:minio:iam:::role/ivd6H_TwNAxH9YkB81tz8yJe_Jk"
       REQUIRE_JWT_SIGNATURE: "false"
       KEYCLOAK_JWKS_URL: "http://keycloak:8080/realms/my-realm/protocol/openid-connect/certs"
       KEYCLOAK_AUDIENCE: "account"

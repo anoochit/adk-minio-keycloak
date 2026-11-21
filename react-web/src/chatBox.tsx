@@ -26,6 +26,9 @@ export function ChatBox({
       message: prompt,
       callbacks: {
         onToken: (chunk) => setReply((prev) => prev + chunk),
+        // ADK re-sends the full text after the deltas — replace, don't append,
+        // so the reply is displayed exactly once.
+        onFinal: (text) => setReply(text),
         onDone: () => setLoading(false),
         onError: (e) => {
           setReply(`เกิดข้อผิดพลาด: ${e.message}`);

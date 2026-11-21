@@ -146,6 +146,10 @@ docker compose up --build -d
 * **`AccessDenied` when calling `AssumeRoleWithWebIdentity`:**
   * Verify `MINIO_IDENTITY_OPENID_CONFIG_URL` is reachable from the `minio` container (`http://keycloak:8080/realms/my-realm/.well-known/openid-configuration`) and `MINIO_IDENTITY_OPENID_CLIENT_ID` matches `adk-minio-client`.
   * Check that the JWT is not expired and `RoleArn` matches the MinIO STS role format expected by your setup.
+* **`RoleARN parse err: invalid ARN - bad partition field` or `RoleARN ... is not defined`:**
+  * MinIO's STS role uses partition `minio` (not `aws`) and must be the exact role MinIO generates from `MINIO_IDENTITY_OPENID_ROLE_POLICY`. Read it from the startup log: `docker compose logs minio | grep "IAM Roles"` → e.g. `arn:minio:iam:::role/ivd6H_TwNAxH9YkB81tz8yJe_Jk`, and put that value in `MINIO_ROLE_ARN`. It is stable across restarts; any other ARN makes every `AssumeRoleWithWebIdentity` call fail.
+* **Every S3 call from the agent fails with `AccessDenied`, but the same operations succeed with raw `boto3`:**
+  * The `minio` Python SDK performs an automatic `s3:GetBucketLocation` (region lookup) before each operation. `user-folder-policy.json` must grant `s3:GetBucketLocation` on `arn:aws:s3:::user-files`, otherwise all SDK calls are denied even though the object-level policy is correct. Apply policy updates with `mc admin policy create local user-folder-policy user-folder-policy.json` (re-running `minio-init` also re-applies it).
 * **`AccessDenied` on `ListBucket`, `GetObject`, or `PutObject` inside `{username}/`:**
   * Check `user-folder-policy.json` to ensure `${jwt:preferred_username}` matches the token's `preferred_username` value and the prefix `s3:prefix` allows `${jwt:preferred_username}/*`.
   * Confirm `minio-init` completed cleanly and created both the `user-files` bucket and `user-folder-policy`.

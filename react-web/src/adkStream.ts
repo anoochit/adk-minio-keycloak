@@ -1,6 +1,13 @@
 // src/adkStream.ts
 export interface StreamCallbacks {
+  /** Called with each streaming delta (payload.partial === true). */
   onToken: (chunkText: string) => void;
+  /**
+   * Called once with the complete text of the turn (payload.partial === false).
+   * ADK re-sends the full text after the deltas, so consumers should REPLACE
+   * the accumulated reply with this value instead of appending it.
+   */
+  onFinal?: (fullText: string) => void;
   onToolEvent?: (event: unknown) => void;
   onDone?: () => void;
   onError?: (err: Error) => void;
@@ -24,8 +31,20 @@ export async function ensureAdkSession(
     }
   );
 
-  if (!res.ok) {
-    throw new Error(`Failed to ensure ADK session: HTTP ${res.status}`);
+  if (!res.ok && res.status !== 409) {
+    // 409 Conflict = the session already exists, which is exactly what
+    // "ensure" asks for, so only a non-409 failure is a real error.
+    let detail = "";
+    try {
+      detail = (await res.text()).slice(0, 300);
+    } catch {
+      // body unavailable; status alone is still worth reporting
+    }
+    throw new Error(
+      `Failed to ensure ADK session: HTTP ${res.status}${
+        detail ? ` — ${detail}` : ""
+      }`
+    );
   }
 }
 
@@ -75,6 +94,7 @@ export async function streamMessageToAgent(params: {
     const reader = response.body.getReader();
     const decoder = new TextDecoder("utf-8");
     let buffer = "";
+    let sawDelta = false;
 
     while (true) {
       const { value, done } = await reader.read();
@@ -95,10 +115,26 @@ export async function streamMessageToAgent(params: {
         callbacks.onToolEvent?.(payload);
 
         const parts = payload?.content?.parts ?? payload?.event?.content?.parts ?? [];
-        for (const part of parts) {
-          if (typeof part?.text === "string" && part.text.length > 0) {
-            callbacks.onToken(part.text);
+        const texts = parts
+          .map((p: { text?: unknown }) => p?.text)
+          .filter((t: unknown): t is string => typeof t === "string" && t.length > 0);
+        if (texts.length === 0) continue;
+
+        if (payload?.partial === true) {
+          // Streaming delta: append it.
+          sawDelta = true;
+          for (const text of texts) callbacks.onToken(text);
+        } else {
+          // partial === false (or absent): complete text for this turn.
+          const fullText = texts.join("");
+          if (callbacks.onFinal) {
+            callbacks.onFinal(fullText);
+          } else if (!sawDelta) {
+            // No deltas arrived (single-shot reply) — append once.
+            callbacks.onToken(fullText);
           }
+          // else: deltas already rendered this text; appending again would
+          // duplicate the reply, so drop the redundant final event.
         }
       }
     }
