@@ -20,6 +20,15 @@ function getOrCreateSessionId(): string {
 export function App() {
   const sessionId = useMemo(() => getOrCreateSessionId(), []);
 
+  const handleSignOut = () => {
+    sessionStorage.removeItem("adk_session_id");
+    const keycloakLogout = encodeURIComponent(
+      "http://localhost:8080/realms/my-realm/protocol/openid-connect/logout?client_id=adk-minio-client&post_logout_redirect_uri=" +
+        encodeURIComponent("http://localhost:4180/")
+    );
+    window.location.href = `/oauth2/sign_out?rd=${keycloakLogout}`;
+  };
+
   return (
     <div className="app-viewport">
       <header className="app-header">
@@ -36,6 +45,13 @@ export function App() {
             <span className="status-badge">
               🔒 MinIO STS Scoped
             </span>
+            <button
+              onClick={handleSignOut}
+              className="signout-button"
+              title="Sign out of application and Keycloak SSO"
+            >
+              Sign Out
+            </button>
           </div>
         </div>
         <p className="header-description">
