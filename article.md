@@ -47,7 +47,7 @@ flowchart TB
 
     subgraph Application["Application Network"]
         Nginx["Nginx Reverse Proxy (:80)<br/>Vite React Static Assets<br/>SSE Reverse Proxy"]
-        ADKServer["Google ADK Server (:8000)<br/>FastAPI + AuthInjectMiddleware<br/>Gemini 2.5 Flash Agent"]
+        ADKServer["Google ADK Server (:8000)<br/>FastAPI + AuthInjectMiddleware<br/>Gemini 3.5 Flash Agent"]
     end
 
     subgraph Storage["Storage Tier (:9000 / :9001)"]
@@ -74,7 +74,7 @@ flowchart TB
 | **Identity Provider** | Keycloak 26.0 | Issues OpenID Connect (OIDC) JWTs containing user identities (`preferred_username`). |
 | **Edge Reverse Proxy** | OAuth2 Proxy 7.7 | Protects the perimeter. Manages encrypted session cookies, validates login state with Keycloak, and injects JWTs downstream via HTTP headers. |
 | **Frontend Web** | React 18 + Vite + Nginx | Serves the user interface and proxies API calls (`/apps`, `/run`, `/run_sse`) through Nginx with streaming optimizations. |
-| **AI Orchestrator** | Google ADK + FastAPI | Hosts the agent runtime powered by Gemini 2.5 Flash. Normalizes incoming identity via ASGI middleware and invokes MinIO tools. |
+| **AI Orchestrator** | Google ADK + FastAPI | Hosts the agent runtime powered by Gemini 3.5 Flash. Normalizes incoming identity via ASGI middleware and invokes MinIO tools. |
 | **Storage Engine** | MinIO + STS | S3-compatible storage. Validates OIDC JWTs directly and applies dynamic IAM policies to mint short-lived credentials scoped to `${jwt:preferred_username}/*`. |
 
 ---
@@ -507,9 +507,11 @@ The initialization sequence will automatically:
    * **Username:** `alice`
    * **Password:** `password123`
 3. Try issuing file management commands in the chat interface:
-   * *"สร้างไฟล์ชื่อ hello.txt เนื้อหา สวัสดีจาก ADK นะ"* (Create `hello.txt` with content "Hello from ADK")
-   * *"รายชื่อไฟล์ของฉันทั้งหมด"* (List all my files)
-   * *"ขอลิงก์ดาวน์โหลดไฟล์ hello.txt"* (Get a 10-minute presigned download link)
+   * *"Create a file named hello.txt with content Hello from ADK"*
+   * *"List all my files"*
+   * *"Read the content of hello.txt"*
+   * *"Delete hello.txt"*
+   * *"Get a download link for hello.txt"*
 4. Open the MinIO Web Console at `http://localhost:9001` (`minioadmin` / `minioadmin_password`) to observe that `hello.txt` is physically stored under the `alice/` prefix inside the `user-files` bucket.
 
 ---
@@ -519,8 +521,9 @@ The initialization sequence will automatically:
 1. **Never trust application code to isolate tenant data when LLMs have tool execution capabilities.** If an agent has access to an unrestricted backend client, prompt injection can turn the agent into a Confused Deputy. Push authorization down to the database or storage engine.
 2. **Dynamic IAM Policy Templates are powerful.** By using `${jwt:preferred_username}`, MinIO derives authorization directly from the cryptographically signed claims of the OIDC token. No administrative provisioning is required when onboarding new users.
 3. **Be mindful of ASGI Middleware semantics.** If you must rewrite request bodies or user identities for streaming endpoints (SSE / WebSockets), avoid Starlette's `BaseHTTPMiddleware`. Work directly with ASGI `scope`, `receive`, and `send` primitives to prevent broken streaming connections and request body caching bugs.
-4. **Beware of SDK preflight operations.** Object storage client libraries often execute hidden management calls (such as `GetBucketLocation`). Ensure your IAM policies explicitly account for these housekeeping calls, or risk confusing `AccessDenied` errors despite correct object-level permissions.
-5. **Separate internal and public S3 clients in containerized environments.** When generating presigned URLs for client browsers, always sign URLs using the browser-accessible endpoint rather than internal Docker service discovery hostnames.
+4. **Enforce plain-text response constraints when necessary.** When building AI assistants for clean embedded terminal or chat displays, explicitly prompt the model to avoid markdown symbols (`*`, `#`, `` ` ``). This eliminates inconsistent syntax parsing during streaming chunk renders.
+5. **Beware of SDK preflight operations.** Object storage client libraries often execute hidden management calls (such as `GetBucketLocation`). Ensure your IAM policies explicitly account for these housekeeping calls, or risk confusing `AccessDenied` errors despite correct object-level permissions.
+6. **Separate internal and public S3 clients in containerized environments.** When generating presigned URLs for client browsers, always sign URLs using the browser-accessible endpoint rather than internal Docker service discovery hostnames.
 
 ---
 

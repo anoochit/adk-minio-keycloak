@@ -62,8 +62,9 @@ flowchart TB
 | `get_download_link` | 10-minute presigned GET URL |
 | `get_upload_link` | 10-minute presigned PUT URL (browser uploads direct to MinIO) |
 
+* **Plain-text output:** Agent instruction enforces clean plain text without markdown styling (no headers, bold asterisks, backticks, or markdown formatting).
 * **Streaming replies** over SSE (`/run_sse`) with correct delta/final event handling in the React client.
-* **Per-user isolation** verified end-to-end: user A cannot read or write user B's prefix (MinIO returns `AccessDenied`).
+* **Per-user isolation** verified end-to-end: user A cannot read, write, or delete user B's prefix (MinIO returns `AccessDenied`).
 * **No client-side secrets:** React never sees a token; the proxy injects identity headers server-side.
 
 ---
@@ -87,7 +88,7 @@ flowchart TB
 │   ├── main.py                 # AuthInjectMiddleware, CORS, API-key bridge
 │   └── my_agent/
 │       ├── __init__.py
-│       └── agent.py            # Root agent + 5 MinIO tools
+│       └── agent.py            # Root agent + 6 MinIO tools (plain-text output)
 └── react-web/
     ├── Dockerfile              # Two-stage: node build → nginx serve
     ├── nginx.conf              # Reverse proxy /apps, /run, /run_sse (SSE-safe)
@@ -149,9 +150,11 @@ Startup order is health-gated: Keycloak → MinIO → `minio-init` (creates the 
 ### 4. Verify
 
 * **App via Proxy:** Open `http://localhost:4180`, sign in as `alice` / `password123`, and try:
-  * *“สร้างไฟล์ชื่อ hello.txt เนื้อหา สวัสดี”*
-  * *“รายชื่อไฟล์ของฉันทั้งหมด”*
-  * *“อ่านเนื้อหาไฟล์ hello.txt”*
+  * *"Create a file named hello.txt with content Hello from ADK"*
+  * *"List all my files"*
+  * *"Read the content of hello.txt"*
+  * *"Delete hello.txt"*
+  * *"Get a download link for hello.txt"*
 * **MinIO Console:** Open `http://localhost:9001` (`minioadmin` / `minioadmin_password`) to inspect `user-files/alice/...` and the policy.
 * **Confirm the STS role ARN** (needed if you change MinIO config):
 
